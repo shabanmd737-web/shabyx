@@ -26,6 +26,10 @@ main{flex:1;overflow-y:auto;padding:16px}
 .m{max-width:88%;white-space:pre-wrap;word-wrap:break-word}
 .u{align-self:flex-end;background:var(--user);color:var(--userink);padding:10px 14px;border-radius:18px 18px 4px 18px}
 .b{align-self:flex-start}
+.m img{display:block;max-width:100%;height:auto;border-radius:12px}
+.u img{max-height:260px;margin-bottom:6px}
+.b img{max-height:460px;margin:4px 0 6px}
+.dl{display:inline-block;font-size:14px;color:var(--ink);border:1px solid var(--line);border-radius:16px;padding:3px 12px;text-decoration:none;margin-bottom:6px}
 .b code{background:var(--card);border:1px solid var(--line);border-radius:4px;padding:1px 5px;font-size:14px}
 .b pre{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px;overflow-x:auto;margin:8px 0;white-space:pre}
 .b pre code{border:0;padding:0}
@@ -40,13 +44,19 @@ main{flex:1;overflow-y:auto;padding:16px}
 @media (prefers-reduced-motion:reduce){.dots i{animation:none}#mic.on{animation:none}}
 form{padding:10px 16px calc(10px + env(safe-area-inset-bottom));border-top:1px solid var(--line)}
 .row{max-width:720px;margin:0 auto;display:flex;gap:8px;align-items:flex-end}
-textarea{flex:1;resize:none;max-height:140px;font:inherit;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:22px;padding:10px 16px;outline:none}
+textarea{flex:1;min-width:0;resize:none;max-height:140px;font:inherit;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:22px;padding:10px 16px;outline:none}
 textarea:focus-visible,button:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
-#send{background:var(--acc);color:var(--accink);border:0;border-radius:50%;width:44px;height:44px;font-weight:800;font-size:18px}
+#send{background:var(--acc);color:var(--accink);border:0;border-radius:50%;width:44px;height:44px;font-weight:800;font-size:18px;flex:none}
 #send:disabled{opacity:.5}
-#mic{background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:50%;width:44px;height:44px;font-size:18px;flex:none}
+#mic,#att,#gen{background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:50%;width:44px;height:44px;font-size:18px;flex:none;padding:0}
+#gen[aria-pressed="true"]{background:var(--acc);color:var(--accink);border-color:var(--acc)}
 #mic.on{background:var(--rec);border-color:var(--rec);color:#fff;animation:pulse 1.2s infinite}
+@media (max-width:400px){#mic,#att,#gen,#send{width:38px;height:38px;font-size:16px}.row{gap:6px}}
 #status{max-width:720px;margin:0 auto 6px;min-height:18px;font-size:13px;color:var(--mute);text-align:center}
+#prev{max-width:720px;margin:0 auto 8px;display:none;align-items:center;gap:10px}
+#prev.show{display:flex}
+#prev img{height:56px;width:56px;object-fit:cover;border-radius:10px;border:1px solid var(--line)}
+#rm{background:none;border:1px solid var(--line);color:var(--ink);border-radius:16px;padding:3px 12px;font-size:14px}
 </style>
 </head>
 <body>
@@ -54,22 +64,28 @@ textarea:focus-visible,button:focus-visible{outline:2px solid var(--acc);outline
 <div class="hr">
 <button id="lang" class="hb" type="button" aria-label="Voice ki bhasha badlo" title="Voice ki bhasha">हिं</button>
 <button id="vr" class="hb" type="button" aria-pressed="false" aria-label="Jawab bolkar sunao" title="Jawab bolkar sunao">&#128263;</button>
-<button id="new" type="button">Nayi chat</button>
+<button id="new" type="button">New chat</button>
 </div></header>
 <main id="main"><div class="wrap" id="chat"></div></main>
 <form id="f">
 <div id="status" aria-live="polite"></div>
+<div id="prev"></div>
 <div class="row">
 <textarea id="t" rows="1" placeholder="Kuch bhi pucho..." aria-label="Message"></textarea>
+<input type="file" id="file" accept="image/*" hidden>
+<button id="att" type="button" aria-label="Photo ya image jodo" title="Photo ya image jodo">&#128206;</button>
+<button id="gen" type="button" aria-pressed="false" aria-label="Image banane ka mode" title="Image banao">&#127912;</button>
 <button id="mic" type="button" aria-label="Bol kar pucho" title="Bol kar pucho">&#127908;</button>
 <button id="send" aria-label="Bhejo">&#10148;</button>
 </div></form>
 <script>
 const chat=document.getElementById("chat"),main=document.getElementById("main"),t=document.getElementById("t"),send=document.getElementById("send");
 const mic=document.getElementById("mic"),langBtn=document.getElementById("lang"),vrBtn=document.getElementById("vr"),statusEl=document.getElementById("status");
+const fileIn=document.getElementById("file"),att=document.getElementById("att"),gen=document.getElementById("gen"),prev=document.getElementById("prev");
 let hist=[];
 try{hist=JSON.parse(localStorage.getItem("shabyx")||"[]")}catch(e){}
-const save=()=>{try{localStorage.setItem("shabyx",JSON.stringify(hist.slice(-40)))}catch(e){}};
+/* images sirf memory me rehti hain (localStorage chhota hota hai), save me nahi jaati */
+const save=()=>{try{localStorage.setItem("shabyx",JSON.stringify(hist.slice(-40).map(m=>({role:m.role,content:m.content||(m.img?"[image bheji thi]":"")}))))}catch(e){}};
 const esc=s=>s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
 function fmt(s){
   s=esc(s);
@@ -77,15 +93,28 @@ function fmt(s){
   s=s.replace(/`([^`\n]+)`/g,"<code>$1</code>").replace(/\*\*([^*\n]+)\*\*/g,"<b>$1</b>");
   return s;
 }
-function add(role,text){
+function add(role,text,img){
   const d=document.createElement("div");d.className="m "+(role==="user"?"u":"b");
-  if(role==="user")d.textContent=text;else d.innerHTML=fmt(text);
+  if(role==="user"){
+    if(img){const im=document.createElement("img");im.src=img;im.alt="Tumhari bheji image";d.appendChild(im)}
+    if(text){const s=document.createElement("span");s.textContent=text;d.appendChild(s)}
+  }else d.innerHTML=fmt(text||"");
   chat.appendChild(d);main.scrollTop=main.scrollHeight;return d;
+}
+function showImage(w,src,note){
+  w.className="m b";w.innerHTML="";
+  const im=document.createElement("img");im.src=src;im.alt="SHABYX ki banayi image";w.appendChild(im);
+  const a=document.createElement("a");a.className="dl";a.href=src;a.download="shabyx-image.png";a.textContent="Save karo";w.appendChild(a);
+  if(note){const n=document.createElement("div");n.innerHTML=fmt(note);w.appendChild(n)}
+  main.scrollTop=main.scrollHeight;
 }
 function render(){
   chat.innerHTML="";
-  if(!hist.length){chat.innerHTML='<div class="empty"><b>Namaste, main SHABYX hun</b>Padhai, code, idea ya kuch bhi, Hindi ya English me pucho. Mic dabao aur bolkar bhi pooch sakte ho.</div>';return}
-  hist.forEach(m=>add(m.role,m.content));
+  if(!hist.length){chat.innerHTML='<div class="empty"><b>Namaste, main SHABYX hun</b>Padhai, code, idea ya kuch bhi, Hindi ya English me pucho. Mic se bolo, photo bhejo, ya 🎨 dabake image banwao.</div>';return}
+  hist.forEach(m=>{
+    if(m.role==="assistant"&&m.img){const w=add("assistant","");showImage(w,m.img,"")}
+    else add(m.role,m.content,m.img);
+  });
 }
 
 /* ---------- VOICE ---------- */
@@ -129,9 +158,9 @@ function chunks(s){
   if(cur)out.push(cur);
   return out;
 }
-function pickVoice(){
+function pickVoice(code){
   const vs=speechSynthesis.getVoices();
-  const l=lang.toLowerCase();
+  const l=code.toLowerCase();
   return vs.find(v=>v.lang.replace("_","-").toLowerCase()===l)
       ||vs.find(v=>v.lang.toLowerCase().startsWith(l.slice(0,2)))
       ||vs.find(v=>v.lang.toLowerCase().startsWith("en-in"))
@@ -142,10 +171,11 @@ function speak(text){
   const c=chunks(cleanForSpeech(text));
   if(!c.length)return;
   speechSynthesis.cancel();
-  const v=pickVoice();
+  const code=/[\u0900-\u097F]/.test(text)?"hi-IN":"en-IN";
+  const v=pickVoice(code);
   c.forEach((p,i)=>{
     const u=new SpeechSynthesisUtterance(p);
-    u.lang=lang;if(v)u.voice=v;u.rate=1;
+    u.lang=code;if(v)u.voice=v;u.rate=1;
     if(i===0)u.onstart=()=>setStatus("Bol raha hun... (rokne ke liye mic dabao)");
     if(i===c.length-1)u.onend=()=>setStatus("");
     speechSynthesis.speak(u);
@@ -185,28 +215,86 @@ mic.onclick=()=>{
 };
 /* ---------- /VOICE ---------- */
 
+/* ---------- IMAGE ---------- */
+let pending=null,genMode=false;
+function shrink(file){
+  return new Promise((res,rej)=>{
+    const url=URL.createObjectURL(file),im=new Image();
+    im.onload=()=>{
+      const k=Math.min(1,1280/Math.max(im.naturalWidth,im.naturalHeight));
+      const w=Math.round(im.naturalWidth*k),h=Math.round(im.naturalHeight*k);
+      const c=document.createElement("canvas");c.width=w;c.height=h;
+      const x=c.getContext("2d");x.fillStyle="#fff";x.fillRect(0,0,w,h);x.drawImage(im,0,0,w,h);
+      URL.revokeObjectURL(url);res(c.toDataURL("image/jpeg",.85));
+    };
+    im.onerror=()=>{URL.revokeObjectURL(url);rej(new Error("bad image"))};
+    im.src=url;
+  });
+}
+function showPrev(){
+  prev.innerHTML="";
+  if(!pending){prev.classList.remove("show");return}
+  const im=document.createElement("img");im.src=pending;im.alt="Chuni hui image";
+  const b=document.createElement("button");b.type="button";b.id="rm";b.textContent="Hatao";
+  b.onclick=()=>{pending=null;showPrev()};
+  prev.appendChild(im);prev.appendChild(b);prev.classList.add("show");
+}
+att.onclick=()=>fileIn.click();
+fileIn.onchange=async()=>{
+  const f=fileIn.files[0];fileIn.value="";
+  if(!f)return;
+  if(!f.type.startsWith("image/")){setStatus("Sirf image (photo) chuno.");return}
+  try{pending=await shrink(f);showPrev();setStatus(genMode?"Ye image edit hogi. Likho kya badalna hai.":"Image jud gayi. Ab sawaal likho ya seedha bhejo.")}
+  catch(e){setStatus("Ye image khul nahi payi, dusri try karo.")}
+};
+gen.onclick=()=>{
+  genMode=!genMode;
+  gen.setAttribute("aria-pressed",genMode?"true":"false");
+  t.placeholder=genMode?"Kaisi image banani hai? Likho...":"Kuch bhi pucho...";
+  setStatus(genMode?"Image mode ON: jo likhoge uski image banegi.":"Image mode OFF: normal chat.");
+};
+/* ---------- /IMAGE ---------- */
+
 async function go(e){
   e&&e.preventDefault();
-  const text=t.value.trim();if(!text||send.disabled)return;
+  const text=t.value.trim();
+  if((!text&&!pending)||send.disabled)return;
+  if(genMode&&!text){setStatus("Pehle likho ki kaisi image banani hai.");return}
   const speakIt=viaVoice||voiceReply;viaVoice=false;
   stopSpeak();
   if(!hist.length)chat.innerHTML="";
-  hist.push({role:"user",content:text});add("user",text);t.value="";t.style.height="auto";
+  const img=pending;pending=null;showPrev();
+  hist.push({role:"user",content:text,img:img||undefined});const ub=add("user",text,img);
+  t.value="";t.style.height="auto";
   send.disabled=true;
   const w=add("assistant","");w.innerHTML='<span class="dots"><i></i><i></i><i></i></span>';
   try{
-    const r=await fetch("/api/chat",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({messages:hist})});
-    const d=await r.json();
-    if(!r.ok)throw new Error(d.error||"Kuch gadbad hui.");
-    hist.push({role:"assistant",content:d.reply});w.innerHTML=fmt(d.reply);save();
-    if(speakIt)speak(d.reply);
-  }catch(err){hist.pop();w.className="m b err";w.textContent=err.message;}
+    if(genMode){
+      const r=await fetch("/api/image",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({prompt:text,image:img||null})});
+      const d=await r.json();
+      if(!r.ok)throw new Error(d.error||"Image nahi ban payi.");
+      hist.push({role:"assistant",content:"[Image banayi gayi: "+text.slice(0,200)+"]",img:d.image});
+      showImage(w,d.image,d.text);save();
+    }else{
+      const msgs=hist.map(m=>({role:m.role,content:m.content}));
+      let keep=2;
+      for(let i=hist.length-1;i>=0&&keep>0;i--){if(hist[i].role==="user"&&hist[i].img){msgs[i].image=hist[i].img;keep--}}
+      const r=await fetch("/api/chat",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({messages:msgs,voice:speakIt})});
+      const d=await r.json();
+      if(!r.ok)throw new Error(d.error||"Kuch gadbad hui.");
+      hist.push({role:"assistant",content:d.reply});w.innerHTML=fmt(d.reply);save();
+      if(speakIt)speak(d.reply);
+    }
+  }catch(err){
+    hist.pop();ub.remove();w.className="m b err";w.textContent=err.message;
+    t.value=text;if(img){pending=img;showPrev()}
+  }
   send.disabled=false;main.scrollTop=main.scrollHeight;
 }
 document.getElementById("f").addEventListener("submit",go);
 t.addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey&&matchMedia("(pointer:fine)").matches){go(e)}});
 t.addEventListener("input",()=>{t.style.height="auto";t.style.height=Math.min(t.scrollHeight,140)+"px"});
-document.getElementById("new").onclick=()=>{stopSpeak();setStatus("");hist=[];save();render()};
+document.getElementById("new").onclick=()=>{stopSpeak();setStatus("");pending=null;showPrev();hist=[];save();render()};
 render();
 </script>
 </body>
